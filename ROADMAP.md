@@ -8,30 +8,39 @@
 
 ---
 
-## Phase 1 — Data Engineering
+## Phase 1 — Data Engineering ✅
 
-- [ ] Download and validate the UCI Household Energy Consumption dataset
-- [ ] Build a reproducible data loading pipeline
-- [ ] Data cleaning and preprocessing pipeline
-- [ ] Missing value analysis and handling
-- [ ] Convert raw CSV to Parquet for efficient storage
-- [ ] Build a DuckDB analytical database
-- [ ] Data validation with **Pandera** (schema/type/range checks)
+- [x] Download and validate the UCI Household Energy Consumption dataset
+- [x] Build a reproducible data loading pipeline
+- [x] Data cleaning and preprocessing pipeline
+- [x] Missing value analysis and handling
+- [x] Convert raw TXT to Parquet for efficient storage
+- [x] Build a DuckDB analytical database
+- [x] Data validation with **Pandera** (schema/type/range checks)
+
+**Findings (missing-value gap analysis):** 1.25% of rows (25,979) have at least
+one missing value, split across 71 distinct gaps. Bimodal distribution: 64
+short gaps (<1h) account for only 1.7% of missing rows and are safely linearly
+interpolated; 7 long gaps (14h–5 days) account for 98.3% of missing rows and
+are left as `NaN` rather than interpolated, since they most likely represent
+meter/logger outages, not zero consumption. Longest gaps: Aug 17–22 2010 (5
+days), Sep 25–28 2010 (3.5 days), Apr 28–30 2007 (2.5 days). These 7 dates are
+flagged as inputs to Phase 3 anomaly investigation.
 
 ---
 
 ## Phase 2 — Exploratory Data Analysis
 
-- [ ] Data quality report (missing values, duplicates, outliers)
-- [ ] Exploratory data analysis notebook
-- [ ] Daily consumption pattern analysis
-- [ ] Weekly seasonality analysis
-- [ ] Monthly and yearly trend analysis
-- [ ] STL decomposition (trend, seasonality, residual)
-- [ ] Autocorrelation (ACF) and Partial ACF analysis
-- [ ] Holiday and weekend consumption analysis
-- [ ] Correlation analysis between electrical variables
-- [ ] Interactive Plotly visualizations
+- [x] Data quality report (missing values, duplicates, outliers)
+- [x] Exploratory data analysis notebook
+- [x] Daily consumption pattern analysis
+- [x] Weekly seasonality analysis
+- [x] Monthly and yearly trend analysis
+- [x] STL decomposition (trend, seasonality, residual)
+- [x] Autocorrelation (ACF) and Partial ACF analysis
+- [x] Holiday and weekend consumption analysis
+- [x] Correlation analysis between electrical variables
+- [x] Interactive Plotly visualizations
 
 ---
 
