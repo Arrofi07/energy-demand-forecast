@@ -5,10 +5,11 @@ energy-demand-forecasting/
 ├── notebooks/
 │   ├── 01_eda_trends_seasonality.ipynb
 │   ├── 02_anomaly_detection.ipynb
-│   ├── 03_model_classical.ipynb
-│   ├── 04_model_prophet_statsforecast.ipynb
-│   ├── 05_model_lstm.ipynb
-│   ├── 06_model_comparison.ipynb
+│   ├── 03_feature_engineering.ipynb
+│   ├── 04_model_classical.ipynb
+│   ├── 05_model_prophet_statsforecast.ipynb
+│   ├── 06_model_lstm.ipynb
+│   ├── 07_model_comparison.ipynb
 ├── src/
 │   ├── data/                 # ingestion, resampling, feature engineering
 │   ├── models/                # arima.py, prophet_model.py, statsforecast_model.py, lstm.py
