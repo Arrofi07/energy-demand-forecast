@@ -99,22 +99,18 @@ def interpolate_short_gaps(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index()
 
 
+# AFTER — min_count=1 makes an all-NaN group sum to NaN instead of 0
 def resample(df: pd.DataFrame, freq: str) -> pd.DataFrame:
-    """Aggregate the dataset to a new sampling frequency."""
+    idx = df.set_index("datetime")
 
-    # Average continuous electrical measurements
-    agg = {col: "mean" for col in MEAN_COLS}
+    # Mean columns unaffected — mean() already returns NaN for an all-NaN group
+    mean_part = idx[MEAN_COLS].resample(freq).mean()
 
-    # Sum energy consumption measured by each sub-meter
-    agg.update({col: "sum" for col in SUM_COLS})
+    # min_count=1: if every value in the period is NaN, sum() now returns NaN
+    # instead of silently treating "no data" as "zero energy used"
+    sum_part = idx[SUM_COLS].resample(freq).sum(min_count=1)
 
-    # Perform time-based aggregation
-    resampled = (
-        df.set_index("datetime")
-        .resample(freq)
-        .agg(agg)
-    )
-
+    resampled = pd.concat([mean_part, sum_part], axis=1)
     return resampled.reset_index()
 
 
