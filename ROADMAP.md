@@ -1,5 +1,11 @@
 # Energy Demand Forecasting — Project Roadmap
 
+> **Notebook numbering:** `01_eda_trends_seasonality.ipynb`,
+> `02_anomaly_detection.ipynb`, `03_feature_engineering.ipynb` (done). Next:
+> `04_forecasting_baselines.ipynb`, `05_model_sarima.ipynb`,
+> `06_model_prophet_lightgbm.ipynb`, `07_model_lstm.ipynb`,
+> `08_model_comparison.ipynb`.
+
 > **Portfolio-complete checkpoint:** Phases 1–10 form a complete, story-worthy
 > portfolio piece on their own (data → EDA → anomalies → features → baselines →
 > classical → ML/DL → evaluation → business impact). Phases 11–16 are the
@@ -14,7 +20,7 @@
 - [x] Build a reproducible data loading pipeline
 - [x] Data cleaning and preprocessing pipeline
 - [x] Missing value analysis and handling
-- [x] Convert raw TXT to Parquet for efficient storage
+- [x] Convert raw CSV to Parquet for efficient storage
 - [x] Build a DuckDB analytical database
 - [x] Data validation with **Pandera** (schema/type/range checks)
 
@@ -29,10 +35,10 @@ flagged as inputs to Phase 3 anomaly investigation.
 
 ---
 
-## Phase 2 — Exploratory Data Analysis
+## Phase 2 — Exploratory Data Analysis ✅
 
 - [x] Data quality report (missing values, duplicates, outliers)
-- [x] Exploratory data analysis notebook
+- [x] Exploratory data analysis notebook (`01_eda_trends_seasonality.ipynb`)
 - [x] Daily consumption pattern analysis
 - [x] Weekly seasonality analysis
 - [x] Monthly and yearly trend analysis
@@ -42,36 +48,114 @@ flagged as inputs to Phase 3 anomaly investigation.
 - [x] Correlation analysis between electrical variables
 - [x] Interactive Plotly visualizations
 
----
-
-## Phase 3 — Anomaly Detection
-
-- [ ] Z-score anomaly detection
-- [ ] Rolling IQR anomaly detection
-- [ ] STL residual anomaly detection
-- [ ] Isolation Forest anomaly detection (multivariate)
-- [ ] Investigate major anomaly events (root-cause each one)
-- [ ] Generate anomaly report
+**Findings:** No multi-year trend — consumption oscillates seasonally between
+~0.7 kW (summer) and ~1.8-2.0 kW (winter) every year. Strong, stable weekly
+(weekend > weekday) and monthly (heating-season) seasonality. Holiday effect
+was essentially null (1.075 kW vs 1.092 kW, holiday vs regular). ACF/PACF
+support a seasonal SARIMA order with m=7. STL residual spikes lined up
+exactly with the known Phase 1 data gaps, not genuine anomalies — a useful
+cross-check carried into Phase 3.
 
 ---
 
-## Phase 4 — Feature Engineering
+## Phase 3 — Anomaly Detection ✅
 
-- [ ] Time-based features (hour, weekday, month, season)
-- [ ] Lag features (1h, 6h, 24h, 168h)
-- [ ] Rolling statistics (mean, std, min, max)
-- [ ] Difference and percentage change features
-- [ ] Cyclical encoding (sin/cos for time variables)
-- [ ] Feature importance analysis
+- [x] Z-score anomaly detection
+- [x] Rolling IQR anomaly detection
+- [x] STL residual anomaly detection
+- [x] Isolation Forest anomaly detection (multivariate)
+- [x] Investigate major anomaly events (root-cause each one)
+- [x] Generate anomaly report (`02_anomaly_detection.ipynb`)
+
+**Findings:** 27 days (~1.9%) flagged by 2+ of the 4 methods, none overlapping
+the 8 known infrastructure gaps — clean separation between "missing data" and
+"unusual-but-present data." Two distinct anomaly flavors: a high-power
+weekend/winter cluster (cold snaps / gatherings) and a scattered low-power
+cluster (likely short absences). Isolation Forest confirmed the high cluster
+but not the low one. Decision: keep these days in training data, add an
+`is_flagged_anomaly` indicator feature rather than dropping them.
+
+---
+
+## Phase 4 — Feature Engineering ✅
+
+- [x] Time-based features (hour, weekday, month, season)
+- [x] Lag features (1h, 6h, 24h, 168h) — hourly grain (`src/features/build_features.py`)
+- [x] Rolling statistics (mean, std, min, max)
+- [x] Difference and percentage change features (built leak-free, from
+      already-lagged values only — not the current/target row)
+- [x] Cyclical encoding (sin/cos for time variables)
+- [x] Feature importance analysis (`03_feature_engineering.ipynb`, LightGBM +
+      mutual information)
+
+**Findings:** `lag_1h` dominates both importance measures by a wide margin
+(short-horizon persistence effect). LightGBM split-count and mutual
+information diverge meaningfully in two informative ways: cyclical hour
+features (hour_sin/cos) rank high in LightGBM but low in MI (trees combine
+them jointly; MI only sees each alone), while rolling min/max features rank
+high in MI but low in LightGBM (informative but redundant given other
+features already used). `is_flagged_anomaly` wasn't useful for 1-hour-ahead
+prediction — worth re-testing at longer horizons. All lag/rolling/diff
+features confirmed leak-free (built only from `shift()`-past values), so this
+feature set is reusable as-is for the direct multi-horizon models in Phases
+6-8 below.
+
+---
+
+## 📐 Forecast Horizon Design (decided before Phase 5)
+
+**Phases 5-8 build a single trustworthy benchmark: 24-hour-ahead forecasting
+on hourly data ("day-ahead" forecasting).** One question drives all of it:
+*Can we construct a trustworthy forecasting benchmark for the actual business
+problem — day-ahead demand forecasting?* No other horizons are introduced
+until Phase 9 — this keeps Phases 5-8 focused on building each model well,
+rather than splitting attention across horizons before any single model is
+solid.
+
+**Phase 9 introduces horizon sensitivity as its own investigation**, adding
+1-hour and 7-day horizons specifically to answer two new questions:
+*How does each model behave as the forecasting horizon increases? How robust
+are different forecasting paradigms across increasingly difficult horizons?*
+This is where the "comparison and reasoning over complexity" goal from the
+start of the project really pays off — by then every model already has a
+track record at 24h, so the horizon experiment is testing something real
+rather than being tacked on for its own sake.
+
+**Per-model multi-step strategy** (this distinction is itself worth a
+paragraph in the writeup):
+- **SARIMA / Prophet:** native multi-step support, no extra engineering.
+  Prophet doesn't depend on recent lags, so it doesn't compound error the
+  way autoregressive methods can — a direct point of contrast with SARIMA.
+- **LightGBM:** **direct** multi-horizon strategy — train 24 separate models
+  (one per horizon offset h=1..24), each using only origin-time features
+  (already leak-free from Phase 4). Chosen over **recursive** (predict h=1,
+  feed forward, repeat) specifically to avoid compounding error and keep the
+  comparison against SARIMA/Prophet fair.
+- **LSTM:** direct sequence-to-sequence — encode the recent window, decode
+  all 24 output values in one shot, same reasoning as LightGBM's direct
+  approach.
+
+**Evaluation (Phases 5-8):** rolling-origin backtesting — many forecast
+origins across the test period, 24 steps ahead from each, error recorded
+**both aggregated and broken down by horizon step (h=1...24)**. The per-step
+error curve, plotted per model, is the centerpiece chart for the 24h
+benchmark itself.
+
+**Evaluation (Phase 9 addition):** re-run the same models at 1h and 7d
+horizons, then compare error *and model ranking* across all three horizons —
+does the model that wins at 24h still win at 1h and 7d, or does the best
+choice change with horizon? That comparison is the actual deliverable of
+Phase 9's horizon sensitivity work.
 
 ---
 
 ## Phase 5 — Forecasting Baselines
 
-- [ ] Naive Forecast
-- [ ] Seasonal Naive Forecast
+- [ ] Naive Forecast (persistence: last known value)
+- [ ] Seasonal Naive Forecast (same hour, 24h and 168h ago)
 - [ ] Moving Average Forecast
-- [ ] Benchmark all baseline methods
+- [ ] Benchmark all baseline methods **at the 24h centerpiece horizon** —
+      these numbers are the bar every later model must beat
 
 ---
 
@@ -79,7 +163,7 @@ flagged as inputs to Phase 3 anomaly investigation.
 
 - [ ] Stationarity testing (ADF & KPSS)
 - [ ] ARIMA implementation
-- [ ] SARIMA implementation
+- [ ] SARIMA implementation — 24h-ahead centerpiece, native multi-step
 - [ ] Hyperparameter tuning
 - [ ] Residual diagnostics
 - [ ] MLflow experiment tracking
@@ -88,23 +172,24 @@ flagged as inputs to Phase 3 anomaly investigation.
 
 ## Phase 7 — Machine Learning Models
 
-- [ ] Prophet implementation
+- [ ] Prophet implementation — 24h-ahead centerpiece, native multi-step
 - [ ] `statsforecast` AutoARIMA/AutoETS (modern Prophet-replacement comparison)
-- [ ] **LightGBM forecasting (primary gradient-boosting model)**
+- [ ] **LightGBM forecasting (primary gradient-boosting model)** — direct
+      multi-horizon strategy, 24 models (one per h=1..24), origin-time
+      features only (reuses Phase 4 feature set as-is)
 - [ ] XGBoost / Random Forest — optional ablation only (brief note: "tried X,
       saw negligible difference vs LightGBM, here's why") rather than a fully
       parallel track
 - [ ] Hyperparameter tuning with Optuna + MLflow
 - [ ] Feature importance comparison
 - [ ] **SHAP values for LightGBM** — surface concrete, specific drivers
-      (e.g., "lag-24h and weekday dominate; temperature-correlated features
-      matter less than expected")
 
 ---
 
 ## Phase 8 — Deep Learning Models
 
-- [ ] LSTM forecasting model
+- [ ] LSTM forecasting model — direct sequence-to-sequence (encode recent
+      window, decode all 24 hourly values in one shot), 24h-ahead centerpiece
 - [ ] Hyperparameter tuning with Optuna + MLflow
 - [ ] GRU model (optional)
 - [ ] Temporal Fusion Transformer (optional stretch goal)
@@ -114,13 +199,27 @@ flagged as inputs to Phase 3 anomaly investigation.
 
 ## Phase 9 — Model Evaluation
 
-- [ ] Rolling-origin backtesting
+**Part A — 24h benchmark evaluation:**
+- [ ] Rolling-origin backtesting — many forecast origins, 24 steps ahead each
+- [ ] **Error-vs-horizon-step curve** (h=1...24, per model) within the 24h
+      benchmark itself
 - [ ] Time-series cross-validation
 - [ ] Compare MAE, RMSE, MAPE, and sMAPE
 - [ ] **Diebold-Mariano test** for statistical significance between model pairs
 - [ ] Error analysis by season
 - [ ] Failure case analysis
-- [ ] Model comparison report
+
+**Part B — Horizon sensitivity investigation** (new horizons introduced here,
+not before): re-run each model (or the strongest subset — SARIMA, Prophet,
+LightGBM required; LSTM at 7d/daily grain optional given setup cost) at 1h
+and 7d horizons, guided by two questions:
+- [ ] *How does each model's error behave as the forecasting horizon
+      increases?* — 1h vs 24h vs 7d error comparison per model
+- [ ] *How robust are different forecasting paradigms across increasingly
+      difficult horizons?* — does the model that wins at 24h still win at 1h
+      and 7d, or does the best choice change with horizon?
+- [ ] Model comparison report (24h benchmark + horizon sensitivity findings
+      together)
 
 ---
 

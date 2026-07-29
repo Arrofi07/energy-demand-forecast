@@ -5,8 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
-data/processed/
-data/raw/
 
 # Virtual environments
 .venv
+
+#others
+data/processed/
+data/raw/
+.DS_Store

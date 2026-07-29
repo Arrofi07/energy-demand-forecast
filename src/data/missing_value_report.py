@@ -43,7 +43,6 @@ def analyze_gaps(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index(drop=True)
     )
 
-
 def main() -> None:
     """Run missing-value analysis and print a summary report."""
 
