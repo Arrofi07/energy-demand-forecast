@@ -11,7 +11,8 @@ import pandas as pd
 
 
 # Directory used to store evaluation results from each forecasting model.
-RESULTS_DIR = Path("../data/results")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+RESULTS_DIR = PROJECT_ROOT / "data" / "results"
 
 
 def save_results(df: pd.DataFrame, name: str) -> None:
