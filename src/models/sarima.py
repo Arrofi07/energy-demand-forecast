@@ -79,73 +79,29 @@ def fit_model(
     return model.fit(disp=False)
 
 
-def rolling_backtest(
-    series: pd.Series,
-    fitted_results,
-    origins: pd.DatetimeIndex,
-    horizon: int,
-    method_name: str,
-) -> pd.DataFrame:
-    """Perform rolling-origin forecasting over the test period."""
+def rolling_backtest(series: pd.Series, fitted_results, origins: pd.DatetimeIndex,
+                      horizon: int, method_name: str, window_hours: int) -> pd.DataFrame:
+    """Walk forward through the test period. At each origin, apply the
+    already-fitted parameters (refit=False) to a FIXED-SIZE rolling window
+    of recent history (not the full series from 2006 onward -- that would
+    make each origin's Kalman filter pass slower than the last, and doesn't
+    match what the model was actually fit on), then forecast `horizon` steps.
 
+    window_hours should match the fit_window size used to originally fit
+    `fitted_results`, so the backtest uses the same amount of context the
+    model was fit with.
+    """
     records = []
-
-    # Start from the initially fitted model.
-    current_results = fitted_results
-
-    # Keep track of the most recent observation already incorporated
-    # into the model state.
-    last_end = fitted_results.data.row_labels[-1]
-
-    # Process each forecast origin sequentially.
     for origin in origins:
+        window_start = origin - pd.Timedelta(hours=window_hours - 1)
+        history = series.loc[window_start:origin].asfreq("h")
+        current_results = fitted_results.apply(history, refit=False)
 
-        # Identify observations that became available since
-        # the previous forecast origin.
-        new_obs = series.loc[
-            last_end + pd.Timedelta(hours=1): origin
-        ]
-
-        if len(new_obs) > 0:
-            # Update the model state with new observations
-            # without re-estimating model parameters.
-            current_results = current_results.append(
-                new_obs,
-                refit=False,
-            )
-            last_end = origin
-
-        # Forecast the requested number of future time steps.
-        forecast = (
-            current_results
-            .get_forecast(steps=horizon)
-            .predicted_mean
-        )
-
-        # Generate timestamps corresponding to the forecast horizon.
-        idx_future = pd.date_range(
-            origin + pd.Timedelta(hours=1),
-            periods=horizon,
-            freq="h",
-        )
-
-        # Retrieve the true observations for evaluation.
+        forecast = current_results.get_forecast(steps=horizon).predicted_mean
+        idx_future = pd.date_range(origin + pd.Timedelta(hours=1), periods=horizon, freq="h")
         actual = series.reindex(idx_future)
 
-        # Store forecasts in the same long-format structure used
-        # by earlier baseline experiments.
-        for h, (a, f) in enumerate(
-            zip(actual.values, forecast.values),
-            start=1,
-        ):
-            records.append(
-                {
-                    "origin": origin,
-                    "horizon_step": h,
-                    "method": method_name,
-                    "actual": a,
-                    "forecast": f,
-                }
-            )
-
+        for h, (a, f) in enumerate(zip(actual.values, forecast.values), start=1):
+            records.append({"origin": origin, "horizon_step": h, "method": method_name,
+                             "actual": a, "forecast": f})
     return pd.DataFrame.from_records(records)
