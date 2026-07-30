@@ -172,14 +172,26 @@ metrics) built here will be reused by every model through Phase 9.
 
 ---
 
-## Phase 6 — Statistical Forecasting
+## Phase 6 — Statistical Forecasting ✅
 
-- [ ] Stationarity testing (ADF & KPSS)
-- [ ] ARIMA implementation
-- [ ] SARIMA implementation — 24h-ahead centerpiece, native multi-step
-- [ ] Hyperparameter tuning
-- [ ] Residual diagnostics
-- [ ] MLflow experiment tracking
+- [x] Stationarity testing (ADF & KPSS)
+- [x] ARIMA implementation
+- [x] SARIMA implementation — 24h-ahead centerpiece, native multi-step
+- [x] Hyperparameter tuning (auto_arima)
+- [x] Residual diagnostics
+- [x] MLflow experiment tracking
+
+**Findings:** auto_arima selected ARIMA(3,1,0)(2,0,0)[24] (d=1, no seasonal
+differencing needed). SARIMA's AIC (8531.4) decisively beat plain ARIMA's
+(8994.5) — the seasonal term clearly earns its complexity on fit quality.
+Against the Phase 5 baseline (daily seasonal naive: MAE 0.530, RMSE 0.786),
+results were genuinely mixed: SARIMA's RMSE (0.776) edged out the baseline
+(fewer large misses) but its MAE (0.560) was worse (less precise on typical
+hours) — an honest interpretability/robustness trade-off, not a clean win.
+Plain ARIMA was worse than both on every metric. Ljung-Box test showed
+residuals still significantly autocorrelated (likely the un-modeled weekly
+seasonality, m=24 only for tractability) — a known, accepted limitation
+carried forward into the Phase 7/8 comparison.
 
 ---
 

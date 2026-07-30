@@ -13,3 +13,4 @@ wheels/
 data/processed/
 data/raw/
 .DS_Store
+mlruns/
