@@ -59,6 +59,33 @@ Full reasoning, caveats, and every finding above (plus a dozen more) are in
 ends with a `Findings` section written against real, executed output, not
 aspirational claims.
 
+## Business impact & recommendation
+
+Phase 10 translates the accuracy numbers above into operational terms
+rather than stopping at MAE: **MAE governs expected imbalance settlement
+cost, RMSE governs the reserve margin needed to cover forecast risk** — two
+different operational costs, not one "accuracy" number. LightGBM's real,
+recomputed improvement over the baseline (MAE −19.2%, RMSE −24.8%), scaled
+through an explicit, adjustable assumption cell (10,000-household
+portfolio, $20/MWh imbalance premium — clearly illustrative, not a
+validated utility ROI figure), works out to roughly **$178k/year** in
+avoided imbalance cost.
+
+**Recommendation:** ship **LightGBM** — best or statistically-tied-best
+accuracy at every horizon tested, cheapest to retrain, the only model
+proven to extend across horizons without an architecture change, and the
+only one with a built-in explainability story (SHAP). Keep **Prophet** as a
+secondary choice for longer-horizon planning conversations with
+non-technical stakeholders. Don't ship **SARIMA** — it loses to the naive
+baseline in most seasons and collapses at 7d. Treat **LSTM** as a validated
+research result (raw sequence learning matches a feature-engineered GBM),
+not a production pick — its accuracy gap with LightGBM isn't statistically
+significant, so its materially higher training cost buys nothing.
+
+See [`notebooks/10_business_impact.ipynb`](notebooks/10_business_impact.ipynb)
+for the full reasoning, the demand-planning implications tied back to each
+earlier phase's findings, and the operational trade-off table.
+
 ## Project structure
 
 ```
@@ -76,7 +103,8 @@ energy-demand-forecast/
 │   ├── 06_model_prophet_lightgbm.ipynb
 │   ├── 07_model_lstm.ipynb
 │   ├── 08_model_comparison.ipynb          # Phase 9A: 24h benchmark, CV, DM tests, seasonality, failure cases
-│   └── 09_horizon_sensitivity.ipynb        # Phase 9B: 1h / 24h / 7d comparison
+│   ├── 09_horizon_sensitivity.ipynb        # Phase 9B: 1h / 24h / 7d comparison
+│   └── 10_business_impact.ipynb            # Phase 10: cost impact, trade-offs, production recommendation
 ├── src/
 │   ├── data/              # download, cleaning, schema validation, DuckDB loading
 │   ├── features/          # leak-free lag/rolling/calendar feature engineering
@@ -135,7 +163,7 @@ uv run python -m src.data.load
 uv run python -m src.data.duckdb_setup
 uv run python -m src.features.build_features
 
-# Run the notebooks in order (01 through 09), or open them in Jupyter/VS Code
+# Run the notebooks in order (01 through 10), or open them in Jupyter/VS Code
 
 # Run the test suite
 uv run pytest
@@ -162,9 +190,10 @@ November 2010.
 
 ## Roadmap
 
-This is Phases 1–9 of a 16-phase plan. Phases 1–9 form a complete,
-story-worthy portfolio piece on their own (data → EDA → anomalies →
-features → baselines → classical → ML/DL → rigorous evaluation). Phase 10
-(business impact) and Phases 11–16 (production pipeline, API, dashboard,
-MLOps, deployment) are the natural next milestone — see
+**Phases 1–10 are complete — this is a portfolio-complete checkpoint.**
+Data → EDA → anomalies → features → baselines → classical → ML/DL →
+rigorous evaluation → business impact, each with real, executed findings,
+not aspirational claims. Phases 11–16 (production pipeline, API,
+dashboard, MLOps, deployment) are the natural next milestone, treated as a
+second, separate goal rather than a blocker to sharing this work — see
 [`ROADMAP.md`](ROADMAP.md) for the full plan.

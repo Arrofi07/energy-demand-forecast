@@ -4,12 +4,11 @@
 > `02_anomaly_detection.ipynb`, `03_feature_engineering.ipynb`,
 > `04_forecasting_baselines.ipynb`, `05_model_sarima.ipynb`,
 > `06_model_prophet_lightgbm.ipynb`, `07_model_lstm.ipynb`,
-> `08_model_comparison.ipynb`, `09_horizon_sensitivity.ipynb` (done). Next:
-> Phase 10 (business impact) doesn't need a new numbered notebook per the
-> phase list below, but add one if the writeup grows past a markdown report.
+> `08_model_comparison.ipynb`, `09_horizon_sensitivity.ipynb`,
+> `10_business_impact.ipynb` (done — Phases 1–10 complete).
 
-> **Portfolio-complete checkpoint:** Phases 1–10 form a complete, story-worthy
-> portfolio piece on their own (data → EDA → anomalies → features → baselines →
+> **Portfolio-complete checkpoint reached:** Phases 1–10 form a complete,
+> story-worthy portfolio piece (data → EDA → anomalies → features → baselines →
 > classical → ML/DL → evaluation → business impact). Phases 11–16 are the
 > "production-grade" follow-up that demonstrates engineering maturity — treat
 > them as a second milestone, not a blocker to sharing the work.
@@ -383,17 +382,47 @@ would have suggested.
 
 ---
 
-## Phase 10 — Business Impact
+## Phase 10 — Business Impact ✅
 
-- [ ] Translate forecast accuracy into operational impact
-- [ ] Estimate potential energy cost savings
-- [ ] Discuss utility demand planning improvements
-- [ ] Explain operational trade-offs
-- [ ] Recommend the best production model
+- [x] Translate forecast accuracy into operational impact
+- [x] Estimate potential energy cost savings
+- [x] Discuss utility demand planning improvements
+- [x] Explain operational trade-offs
+- [x] Recommend the best production model
+
+**Findings (`10_business_impact.ipynb`):** reframed Phase 9's two error
+metrics by what they actually govern operationally — MAE drives expected
+imbalance settlement cost, RMSE drives required reserve margin (it
+penalizes the large-miss tail, which Phase 9's failure-case analysis
+already showed clusters on real anomalous days) — rather than treating them
+as interchangeable "accuracy" numbers. LightGBM's real, recomputed-live
+improvement over the Phase 5 baseline (MAE −19.2%, RMSE −24.8%) was scaled,
+through an explicit, adjustable assumption cell (10,000-household
+portfolio, $20/MWh imbalance premium — clearly labeled illustrative, not a
+validated utility ROI figure, and likely conservative since it doesn't
+model error-cancellation across a real pooled portfolio), into an
+illustrative ≈$178k/year avoided-imbalance-cost estimate. Demand-planning
+implications tie directly back to earlier phases: Phase 9B's finding that
+SARIMA collapses at 7d means week-ahead planning should never lean on it
+despite being usable at 24h; Phase 9A's per-season breakdown means reserve
+margins sized on annual-average error would under-cover winter and
+over-cover summer. Operational trade-offs center on one point from Phase
+9A: since the LightGBM-vs-LSTM accuracy gap isn't statistically significant
+(DM p=0.098), LSTM's materially higher retraining cost and its need for a
+new architecture (not just a parameter change) per horizon are costs paid
+for no proven accuracy benefit. **Recommendation:** LightGBM as the primary
+production model (best/tied-best accuracy at every horizon, cheapest to
+retrain, only one proven to extend cleanly across horizons, built-in SHAP
+explainability); Prophet as a secondary choice specifically for
+longer-horizon planning conversations with non-technical stakeholders;
+SARIMA not recommended for production; LSTM judged a validated research
+result (raw sequence learning matches feature-engineered GBM) rather than
+a production pick, given no significant edge over LightGBM's lower
+operational cost.
 
 ---
 
-### 🏁 Portfolio-complete checkpoint — pause here, write it up, share it
+### 🏁 Portfolio-complete checkpoint reached — Phases 1–10 done
 
 ---
 
