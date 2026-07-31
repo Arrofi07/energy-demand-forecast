@@ -27,4 +27,17 @@ dependencies = [
     "shap>=0.52.0",
     "statsforecast>=2.1.1",
     "statsmodels>=0.14.6",
+    "torch>=2.13.0",
+]
+
+[dependency-groups]
+dev = [
+    "nbconvert>=7.17.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: tests that fit real models (Prophet/SARIMA/LightGBM) and are slower to run",
 ]

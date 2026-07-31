@@ -195,30 +195,85 @@ carried forward into the Phase 7/8 comparison.
 
 ---
 
-## Phase 7 — Machine Learning Models
+## Phase 7 — Machine Learning Models ✅ (core scope; 2 items deferred)
 
-- [ ] Prophet implementation — 24h-ahead centerpiece, native multi-step
-- [ ] `statsforecast` AutoARIMA/AutoETS (modern Prophet-replacement comparison)
-- [ ] **LightGBM forecasting (primary gradient-boosting model)** — direct
+- [x] Prophet implementation — 24h-ahead centerpiece, native multi-step
+- [ ] `statsforecast` AutoARIMA/AutoETS — deferred, not blocking; Prophet +
+      LightGBM already give two structurally different paradigms to compare
+- [x] **LightGBM forecasting (primary gradient-boosting model)** — direct
       multi-horizon strategy, 24 models (one per h=1..24), origin-time
       features only (reuses Phase 4 feature set as-is)
-- [ ] XGBoost / Random Forest — optional ablation only (brief note: "tried X,
-      saw negligible difference vs LightGBM, here's why") rather than a fully
-      parallel track
-- [ ] Hyperparameter tuning with Optuna + MLflow
-- [ ] Feature importance comparison
-- [ ] **SHAP values for LightGBM** — surface concrete, specific drivers
+- [ ] XGBoost / Random Forest — optional ablation, deferred
+- [x] Hyperparameter tuning with Optuna + MLflow — tuned once on h=24 (20
+      trials, time-based validation split), reused across all 24 direct
+      models
+- [x] Feature importance comparison — LightGBM gain, h=1 vs h=24
+- [x] **SHAP values for LightGBM** — h=24 model, surfaces concrete drivers
+
+**Findings (`06_model_prophet_lightgbm.ipynb`):** **LightGBM is the first
+model in this project to decisively beat the Phase 5 baseline on every
+metric** (MAE 0.432 vs. 0.530, RMSE 0.593 vs. 0.786, sMAPE 44.4% vs. 49.5%)
+— an ~18% MAE / ~25% RMSE cut, not the mixed win SARIMA managed. Prophet also
+beat the baseline on MAE/RMSE (0.485 / 0.637) and both ML models beat SARIMA
+outright. **Caveat:** LightGBM's backtest covers only 89.1% of test origins
+(6,156/6,912) vs. 96.7% for Prophet/SARIMA — `direct_multi_horizon_backtest`
+drops any origin with an NaN engineered feature, and the 168h-rolling-window
+features stay contaminated for up to a week after each Phase-1 data gap. The
+margin is large enough that this almost certainly doesn't flip the ranking,
+but a shared gap-free origin set should be used before Phase 9 treats these
+numbers as final. Feature importance confirms the model changes strategy
+with horizon exactly as hypothesized: `lag_1h` dominates at h=1 (matching
+Phase 4), while `lag_24h` and weekly-cycle features (`roll_mean_168h`,
+`lag_168h`) take over at h=24 — the weekly signal SARIMA structurally lacked
+(m=24 only). **Non-obvious finding:** MAE vs. horizon-step is not monotonic
+for any of the three models — a sharp double-peaked curve with spikes at
+h=7 (7am) and h=19-21 (7-9pm), which Prophet's own daily-seasonality
+component explains: those are exactly its two humps (morning
+routine/breakfast, evening cooking/heating) — the most behavior-driven,
+least routine-predictable hours of the day, hard for every paradigm alike.
 
 ---
 
-## Phase 8 — Deep Learning Models
+## Phase 8 — Deep Learning Models ✅ (core scope; 2 optional items deferred)
 
-- [ ] LSTM forecasting model — direct sequence-to-sequence (encode recent
-      window, decode all 24 hourly values in one shot), 24h-ahead centerpiece
-- [ ] Hyperparameter tuning with Optuna + MLflow
-- [ ] GRU model (optional)
-- [ ] Temporal Fusion Transformer (optional stretch goal)
-- [ ] Compare learning curves
+- [x] **LSTM forecasting model** — direct sequence-to-sequence (encoder LSTM
+      reads the recent lookback window once, a linear head maps its final
+      hidden state to all 24 hourly values in one shot — no autoregressive
+      decoding), 24h-ahead centerpiece. Inputs deliberately minimal: raw
+      target + cyclical calendar encodings only, no hand-engineered lags —
+      the model is expected to learn temporal structure itself.
+- [x] Hyperparameter tuning with Optuna (12 trials: lookback, hidden size,
+      depth, dropout, learning rate) + MLflow
+- [ ] GRU model — deferred, not blocking; LSTM already gives a second DL
+      paradigm to compare against LightGBM's feature-engineered approach
+- [ ] Temporal Fusion Transformer — optional stretch goal, deferred
+- [x] Compare learning curves — train vs. validation loss per epoch
+
+**Findings (`07_model_lstm.ipynb`):** LSTM clearly beats the Phase 5
+baseline, Prophet, and SARIMA on every metric (MAE 0.447 vs. 0.530, RMSE
+0.604 vs. 0.786, sMAPE 46.6% vs. 49.5%) — a genuine win in the same tier as
+LightGBM, not SARIMA's mixed result — but LightGBM still edges it out on
+every metric (MAE 0.429, RMSE 0.591, sMAPE 44.0%). Optuna settled on a 48h
+lookback, 2 layers, hidden size 115, dropout 0.151 — the short lookback
+winning over 72h/168h options echoes Phase 5's finding that daily lag beat
+weekly lag for the naive baselines too. **Honest caveat:** the learning
+curve shows near-immediate overfitting — validation loss bottoms out within
+1-2 epochs, then climbs steadily while training loss keeps falling — a real
+limitation of applying a 115-hidden-unit, 2-layer LSTM to a single ~27k-hour
+series, unlike LightGBM's tree-based resistance to overfitting. Early
+stopping correctly restored the best-seen (early) checkpoint, which is why
+the backtest numbers above still hold up. Coverage caveat, smaller than
+LightGBM's: LSTM's 48h lookback only needs to be NaN-free 48h before an
+origin (vs. up to 168h for LightGBM's rolling features), so it covers 94.1%
+of test origins (6,504/6,912) — between LightGBM's 89.1% and Prophet/
+SARIMA's 96.7%. The error-vs-horizon-step double-peak (spikes at h=7 and
+h=19-21) reappears for LSTM too, now confirmed across four structurally
+different models — strong evidence it's a property of the data (behavior-
+driven morning/evening variability), not any one model's architecture.
+**Bottom line for Phase 9:** a paradigm needing zero manual feature
+engineering gets within ~4% MAE of the feature-engineered gradient-boosting
+model on this dataset, comfortably clearing every classical/baseline method,
+but doesn't unseat LightGBM as the benchmark to beat.
 
 ---
 
