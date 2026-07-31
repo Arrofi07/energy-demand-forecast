@@ -242,7 +242,7 @@ least routine-predictable hours of the day, hard for every paradigm alike.
       decoding), 24h-ahead centerpiece. Inputs deliberately minimal: raw
       target + cyclical calendar encodings only, no hand-engineered lags —
       the model is expected to learn temporal structure itself.
-- [x] Hyperparameter tuning with Optuna (12 trials: lookback, hidden size,
+- [x] Hyperparameter tuning with Optuna (30 trials: lookback, hidden size,
       depth, dropout, learning rate) + MLflow
 - [ ] GRU model — deferred, not blocking; LSTM already gives a second DL
       paradigm to compare against LightGBM's feature-engineered approach
@@ -250,44 +250,74 @@ least routine-predictable hours of the day, hard for every paradigm alike.
 - [x] Compare learning curves — train vs. validation loss per epoch
 
 **Findings (`07_model_lstm.ipynb`):** LSTM clearly beats the Phase 5
-baseline, Prophet, and SARIMA on every metric (MAE 0.447 vs. 0.530, RMSE
-0.604 vs. 0.786, sMAPE 46.6% vs. 49.5%) — a genuine win in the same tier as
+baseline, Prophet, and SARIMA on every metric (MAE 0.440 vs. 0.530, RMSE
+0.605 vs. 0.786, sMAPE 45.6% vs. 49.5%) — a genuine win in the same tier as
 LightGBM, not SARIMA's mixed result — but LightGBM still edges it out on
-every metric (MAE 0.429, RMSE 0.591, sMAPE 44.0%). Optuna settled on a 48h
-lookback, 2 layers, hidden size 115, dropout 0.151 — the short lookback
+MAE/RMSE/sMAPE (0.429 / 0.591 / 44.0%); LSTM actually posts the best MAPE of
+all five methods (58.7%), a flip worth noting given this project's standing
+distrust of MAPE/sMAPE on this dataset. Optuna (30 trials) settled on a 48h
+lookback, 1 layer, hidden size 105, dropout 0.256 — the short lookback
 winning over 72h/168h options echoes Phase 5's finding that daily lag beat
-weekly lag for the naive baselines too. **Honest caveat:** the learning
-curve shows near-immediate overfitting — validation loss bottoms out within
-1-2 epochs, then climbs steadily while training loss keeps falling — a real
-limitation of applying a 115-hidden-unit, 2-layer LSTM to a single ~27k-hour
-series, unlike LightGBM's tree-based resistance to overfitting. Early
-stopping correctly restored the best-seen (early) checkpoint, which is why
-the backtest numbers above still hold up. Coverage caveat, smaller than
-LightGBM's: LSTM's 48h lookback only needs to be NaN-free 48h before an
-origin (vs. up to 168h for LightGBM's rolling features), so it covers 94.1%
-of test origins (6,504/6,912) — between LightGBM's 89.1% and Prophet/
-SARIMA's 96.7%. The error-vs-horizon-step double-peak (spikes at h=7 and
-h=19-21) reappears for LSTM too, now confirmed across four structurally
-different models — strong evidence it's a property of the data (behavior-
-driven morning/evening variability), not any one model's architecture.
-**Bottom line for Phase 9:** a paradigm needing zero manual feature
-engineering gets within ~4% MAE of the feature-engineered gradient-boosting
-model on this dataset, comfortably clearing every classical/baseline method,
-but doesn't unseat LightGBM as the benchmark to beat.
+weekly lag for the naive baselines too; widening the search from an earlier
+12-trial run to 30 trials changed the winning configuration but not the
+model's standing versus the other four methods. **Honest caveat:** the
+learning curve shows near-immediate overfitting — validation loss bottoms
+out within 2-3 epochs, then climbs steadily while training loss keeps
+falling — a real limitation of applying even a single-layer, 105-hidden-unit
+LSTM to a single ~27k-hour series, unlike LightGBM's tree-based resistance
+to overfitting. Early stopping correctly restored the best-seen (early)
+checkpoint, which is why the backtest numbers above still hold up. Coverage
+caveat, smaller than LightGBM's: LSTM's 48h lookback only needs to be
+NaN-free 48h before an origin (vs. up to 168h for LightGBM's rolling
+features), so it covers 94.1% of test origins (6,504/6,912) — between
+LightGBM's 89.1% and Prophet/SARIMA's 96.7%. The error-vs-horizon-step
+double-peak (spikes at h=7 and h=19-21) reappears for LSTM too, now
+confirmed across four structurally different models — strong evidence it's
+a property of the data (behavior-driven morning/evening variability), not
+any one model's architecture. **Bottom line for Phase 9:** a paradigm
+needing zero manual feature engineering gets within ~3% MAE of the
+feature-engineered gradient-boosting model on this dataset, comfortably
+clearing every classical/baseline method. Phase 9's Diebold-Mariano test
+later confirmed the LightGBM-vs-LSTM gap is not statistically significant
+(p=0.098) — LightGBM remains the practical pick, but the margin is closer
+than the point-estimate MAE alone suggests.
 
 ---
 
-## Phase 9 — Model Evaluation
+## Phase 9 — Model Evaluation (Part A ✅; Part B not started)
 
 **Part A — 24h benchmark evaluation:**
-- [ ] Rolling-origin backtesting — many forecast origins, 24 steps ahead each
-- [ ] **Error-vs-horizon-step curve** (h=1...24, per model) within the 24h
+- [x] Rolling-origin backtesting — many forecast origins, 24 steps ahead each
+      (reuses the Phase 5-8 saved results as-is, no refitting)
+- [x] **Error-vs-horizon-step curve** (h=1...24, per model) within the 24h
       benchmark itself
-- [ ] Time-series cross-validation
-- [ ] Compare MAE, RMSE, MAPE, and sMAPE
-- [ ] **Diebold-Mariano test** for statistical significance between model pairs
-- [ ] Error analysis by season
-- [ ] Failure case analysis
+- [x] Time-series cross-validation — 4 contiguous chronological folds over
+      the test period, as a walk-forward ranking-stability check
+- [x] Compare MAE, RMSE, MAPE, and sMAPE
+- [x] **Diebold-Mariano test** for statistical significance between model pairs
+- [x] Error analysis by season
+- [x] Failure case analysis
+
+**Findings (`08_model_comparison.ipynb`):** LightGBM (MAE 0.429) and LSTM
+(0.440) are well clear of Prophet (0.485), the Phase 5 baseline (0.530),
+SARIMA (0.560), weekly seasonal naive (0.563), ARIMA (0.631), and flat
+persistence (0.664) — but the LightGBM-vs-LSTM gap itself is **not**
+statistically significant (Diebold-Mariano p=0.098); every other pairwise
+comparison is significant at p<0.001. Time-series CV (4 chronological
+folds) shows LightGBM #1 and LSTM #2 in *every* fold with no reversal, but
+Prophet/SARIMA/baseline reshuffle by season — most strikingly, the naive
+baseline beats both SARIMA and Prophet in the summer fold, when low,
+stable demand makes yesterday's value a near-unbeatable forecast. Per-
+season MAE sharpens Phase 6's "mixed" SARIMA verdict: SARIMA loses to the
+trivial baseline in 3 of 4 seasons (winter, spring, summer), not just
+"sometimes." Failure case analysis found all five methods missing the same
+handful of real events (a Nov 20 evening spike, the Feb 21 and Oct 18
+flagged-anomaly days), but LightGBM and the baseline have proportionally
+fewer worst-case failures landing on already-flagged anomaly days (20%)
+than LSTM/Prophet (40%) — concrete evidence that LightGBM's Phase 4
+`is_flagged_anomaly` feature earns its keep. New reusable module:
+`src/evaluation/comparison.py` (season labeling, CV-fold assignment,
+Diebold-Mariano test, worst-case extraction).
 
 **Part B — Horizon sensitivity investigation** (new horizons introduced here,
 not before): re-run each model (or the strongest subset — SARIMA, Prophet,
