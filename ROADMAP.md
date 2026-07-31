@@ -1,10 +1,12 @@
 # Energy Demand Forecasting — Project Roadmap
 
 > **Notebook numbering:** `01_eda_trends_seasonality.ipynb`,
-> `02_anomaly_detection.ipynb`, `03_feature_engineering.ipynb` (done). Next:
+> `02_anomaly_detection.ipynb`, `03_feature_engineering.ipynb`,
 > `04_forecasting_baselines.ipynb`, `05_model_sarima.ipynb`,
 > `06_model_prophet_lightgbm.ipynb`, `07_model_lstm.ipynb`,
-> `08_model_comparison.ipynb`.
+> `08_model_comparison.ipynb`, `09_horizon_sensitivity.ipynb` (done). Next:
+> Phase 10 (business impact) doesn't need a new numbered notebook per the
+> phase list below, but add one if the writeup grows past a markdown report.
 
 > **Portfolio-complete checkpoint:** Phases 1–10 form a complete, story-worthy
 > portfolio piece on their own (data → EDA → anomalies → features → baselines →
@@ -284,7 +286,7 @@ than the point-estimate MAE alone suggests.
 
 ---
 
-## Phase 9 — Model Evaluation (Part A ✅; Part B not started)
+## Phase 9 — Model Evaluation ✅
 
 **Part A — 24h benchmark evaluation:**
 - [x] Rolling-origin backtesting — many forecast origins, 24 steps ahead each
@@ -319,17 +321,65 @@ than LSTM/Prophet (40%) — concrete evidence that LightGBM's Phase 4
 `src/evaluation/comparison.py` (season labeling, CV-fold assignment,
 Diebold-Mariano test, worst-case extraction).
 
-**Part B — Horizon sensitivity investigation** (new horizons introduced here,
-not before): re-run each model (or the strongest subset — SARIMA, Prophet,
-LightGBM required; LSTM at 7d/daily grain optional given setup cost) at 1h
-and 7d horizons, guided by two questions:
-- [ ] *How does each model's error behave as the forecasting horizon
+**Part B — Horizon sensitivity investigation ✅** (new horizons introduced
+here, not before): re-run each model (or the strongest subset — SARIMA,
+Prophet, LightGBM required; LSTM at 7d skipped, exactly as flagged optional
+given setup cost — a 168-step direct decode head is a different
+architecture, not a parameter change) at 1h and 7d horizons, guided by two
+questions:
+- [x] *How does each model's error behave as the forecasting horizon
       increases?* — 1h vs 24h vs 7d error comparison per model
-- [ ] *How robust are different forecasting paradigms across increasingly
+- [x] *How robust are different forecasting paradigms across increasingly
       difficult horizons?* — does the model that wins at 24h still win at 1h
       and 7d, or does the best choice change with horizon?
-- [ ] Model comparison report (24h benchmark + horizon sensitivity findings
+- [x] Model comparison report (24h benchmark + horizon sensitivity findings
       together)
+
+**Findings (`09_horizon_sensitivity.ipynb`):** 1h reuses the existing 24h-
+benchmark results at `horizon_step == 1` (zero refitting); 7d (168h) needed
+genuinely new backtests, reusing Phases 6-7's tuned hyperparameters/order
+(no re-search) with `origin_freq="7d"` (41 non-overlapping origins).
+**LightGBM and LSTM are the only methods that stay near the top at every
+horizon** (LSTM 0.207 vs. LightGBM's 0.211 at 1h, essentially tied at 24h,
+LightGBM 0.430 at 7d with LSTM not evaluated there) — the clearest answer to
+"does the 24h winner keep winning": yes. **SARIMA is the sharpest
+reversal:** competitive-ish at 1h, unremarkable at 24h, but the outright
+*worst* method of any kind at 7d (0.800, worse than trivial persistence) —
+its daily-only (m=24) seasonal structure doesn't extrapolate a full week
+out. **Prophet moves the opposite direction:** one of the weakest methods
+at 1h, but clearly 2nd-best (behind only LightGBM) at 7d. Each naive
+baseline peaks almost exactly at the horizon matching its own lag. **A real
+bug was caught and fixed along the way:** `daily_seasonal_naive`'s fixed
+24h lag silently produces future-leaking forecasts whenever horizon > 24h
+(its farthest-step lookback lands after the origin) — this only surfaced
+because Part B is the first time this project asked a method for a horizon
+longer than its own lag. `src/evaluation/baselines.py`'s `_lagged_forecast`
+now raises `ValueError` if `horizon > lag_hours`. Rather than just drop
+`daily_seasonal_naive` from the 7d comparison, a leak-free
+`extended_daily_seasonal_naive` closes the gap (tiles the most recent 24h
+block forward instead of looking up a different day-ago point per step) —
+mathematically identical to the original whenever horizon<=24 (confirmed to
+6 decimal places, not just approximated), so it's a genuine extension of
+Phase 5's "recency" baseline, not a new one. It answers the question Phase
+5 couldn't: does "daily lag beats weekly lag" hold at 7d too, or was it a
+24h-specific artifact? **It holds** — its aggregate 7d MAE (0.552) still
+edges out `weekly_seasonal_naive`'s (0.564), extending Phase 5's finding
+rather than overturning it. (At the single exact h=168 step, `naive`,
+`weekly_seasonal_naive`, and `extended_daily_seasonal_naive` are
+numerically tied — a neat, confirmed structural fact: 168=24×7, so every
+lag-based baseline whose lag divides the horizon reduces to "the value at
+the origin" at that one specific step; their aggregate curves still
+differ.) LSTM was deliberately not extended to 7d: unlike SARIMA/Prophet/
+LightGBM, its output head is sized at construction time, so a 7d version
+needs a new architecture and a full retrain, not a parameter change —
+disproportionate cost given Part A already found LightGBM and LSTM
+statistically indistinguishable at 24h, and LightGBM's own 7d extension
+answers the "does the ML/DL tier hold at 7d" question on its own. **Bottom
+line for Phase 10:** the practical recommendation is horizon-dependent —
+LightGBM/LSTM are the safe default throughout, but if a single classical
+fallback were needed, Prophet is the better pick at longer horizons and
+SARIMA the worse one, the opposite of what their similar 24h standing alone
+would have suggested.
 
 ---
 
