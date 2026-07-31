@@ -22,7 +22,20 @@ def naive_forecast(series: pd.Series, origin: pd.Timestamp, horizon: int = HORIZ
 
 
 def _lagged_forecast(series: pd.Series, origin: pd.Timestamp, horizon: int, lag_hours: int) -> pd.Series:
-    """Forecast T+h using the value observed exactly `lag_hours` earlier, for each h."""
+    """Forecast T+h using the value observed exactly `lag_hours` earlier, for each h.
+
+    Requires `horizon <= lag_hours`: the lookback for the farthest step is
+    `origin + horizon - lag_hours`, which is only guaranteed to be at or
+    before `origin` (i.e. actually known at forecast time) when the lag is
+    at least as long as the horizon. Calling this with a longer horizon than
+    lag would silently look up values *after* the origin -- future data
+    leakage rather than a legitimate forecast.
+    """
+    if horizon > lag_hours:
+        raise ValueError(
+            f"horizon ({horizon}) exceeds lag_hours ({lag_hours}) -- the farthest "
+            "forecast step would look up a value after the origin (future leakage)."
+        )
     idx_future = pd.date_range(origin + pd.Timedelta(hours=1), periods=horizon, freq="h")
     idx_lookback = idx_future - pd.Timedelta(hours=lag_hours)
     values = series.loc[idx_lookback].values
@@ -37,6 +50,29 @@ def daily_seasonal_naive(series: pd.Series, origin: pd.Timestamp, horizon: int =
 def weekly_seasonal_naive(series: pd.Series, origin: pd.Timestamp, horizon: int = HORIZON) -> pd.Series:
     """'Next day looks like the same day last week' -- captures daily rhythm AND day-of-week effect."""
     return _lagged_forecast(series, origin, horizon, lag_hours=168)
+
+
+def extended_daily_seasonal_naive(series: pd.Series, origin: pd.Timestamp, horizon: int = HORIZON) -> pd.Series:
+    """Repeat the most recently observed 24h profile for the entire horizon.
+
+    Unlike `daily_seasonal_naive` (each step looks up its own specific day-ago
+    value, and is only leak-free up to horizon=24 -- see `_lagged_forecast`'s
+    guard), this looks up exactly one 24h block ending at `origin` and tiles
+    it forward, so every value it ever reads is at or before `origin` --
+    leak-free at *any* horizon. It's mathematically identical to
+    `daily_seasonal_naive` whenever horizon<=24 (both reduce to "the value
+    24h before this step"), and is the extension of that same "recency"
+    baseline to horizons where the original isn't valid -- testing whether
+    recency (Phase 5's finding: daily lag beat weekly lag at 24h) still helps
+    at longer horizons, or was an artifact specific to the 24h horizon where
+    it was first measured.
+    """
+    last_24 = series.loc[origin - pd.Timedelta(hours=23): origin].values
+    if len(last_24) != 24:
+        raise ValueError(f"Expected 24h of history before {origin}, got {len(last_24)}.")
+    idx_future = pd.date_range(origin + pd.Timedelta(hours=1), periods=horizon, freq="h")
+    tiled = np.tile(last_24, int(np.ceil(horizon / 24)))[:horizon]
+    return pd.Series(tiled, index=idx_future)
 
 
 def get_forecast_origins(series: pd.Series, test_start: pd.Timestamp, horizon: int = HORIZON,

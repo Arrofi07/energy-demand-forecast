@@ -5,6 +5,7 @@ import pytest
 from src.evaluation.baselines import (
     compute_metrics,
     daily_seasonal_naive,
+    extended_daily_seasonal_naive,
     get_forecast_origins,
     mae,
     mape,
@@ -49,6 +50,49 @@ class TestDailySeasonalNaive:
         origin = long_series.index[5]  # too close to start for a 24h lookback
         with pytest.raises(KeyError):
             daily_seasonal_naive(long_series, origin, horizon=24)
+
+    def test_raises_when_horizon_exceeds_lag_hours(self, long_series):
+        """horizon > lag_hours (24) would look up values after the origin --
+        future leakage, not a legitimate forecast -- and must be rejected.
+        """
+        origin = long_series.index[100]
+        with pytest.raises(ValueError, match="future leakage"):
+            daily_seasonal_naive(long_series, origin, horizon=48)
+
+
+class TestExtendedDailySeasonalNaive:
+    def test_matches_daily_seasonal_naive_when_horizon_is_24_or_less(self, long_series):
+        origin = long_series.index[100]
+        extended = extended_daily_seasonal_naive(long_series, origin, horizon=24)
+        original = daily_seasonal_naive(long_series, origin, horizon=24)
+
+        pd.testing.assert_series_equal(extended, original)
+
+    def test_tiles_the_last_24h_profile_across_a_longer_horizon(self, long_series):
+        origin = long_series.index[100]
+        horizon = 60  # 2 full days + a partial third day
+        forecast = extended_daily_seasonal_naive(long_series, origin, horizon=horizon)
+
+        last_24 = long_series.loc[origin - pd.Timedelta(hours=23): origin].values
+        for h in range(1, horizon + 1):
+            future_ts = origin + pd.Timedelta(hours=h)
+            expected = last_24[(h - 1) % 24]
+            assert forecast.loc[future_ts] == expected
+
+    def test_only_ever_uses_values_at_or_before_origin(self, long_series):
+        """Every value tiled into the forecast must come from the single 24h
+        block ending at origin -- never anything observed after it, however
+        far the horizon extends.
+        """
+        origin = long_series.index[100]
+        forecast = extended_daily_seasonal_naive(long_series, origin, horizon=168)
+
+        assert forecast.max() <= long_series.loc[origin]
+
+    def test_raises_when_insufficient_history(self, long_series):
+        origin = long_series.index[5]  # fewer than 24h of history available
+        with pytest.raises(ValueError, match="Expected 24h of history"):
+            extended_daily_seasonal_naive(long_series, origin, horizon=24)
 
 
 class TestWeeklySeasonalNaive:
