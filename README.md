@@ -93,7 +93,9 @@ energy-demand-forecast/
 ├── data/
 │   ├── energy.duckdb          # analytical DB: minute / hourly / daily / hourly_features tables
 │   ├── processed/              # cleaned Parquet at each resolution
-│   └── results/                 # saved backtest results per model (long-format, reused across notebooks)
+│   ├── results/                 # saved backtest results per model (long-format, reused across notebooks)
+│   └── forecasts/                # batch prediction outputs (gitignored, regenerable)
+├── models/                  # serialized production model bundle (gitignored, regenerable)
 ├── notebooks/
 │   ├── 01_eda_trends_seasonality.ipynb
 │   ├── 02_anomaly_detection.ipynb
@@ -104,13 +106,16 @@ energy-demand-forecast/
 │   ├── 07_model_lstm.ipynb
 │   ├── 08_model_comparison.ipynb          # Phase 9A: 24h benchmark, CV, DM tests, seasonality, failure cases
 │   ├── 09_horizon_sensitivity.ipynb        # Phase 9B: 1h / 24h / 7d comparison
-│   └── 10_business_impact.ipynb            # Phase 10: cost impact, trade-offs, production recommendation
+│   ├── 10_business_impact.ipynb            # Phase 10: cost impact, trade-offs, production recommendation
+│   └── 11_production_pipeline.ipynb        # Phase 11: production pipeline demo + validation vs. research
 ├── src/
 │   ├── data/              # download, cleaning, schema validation, DuckDB loading
 │   ├── features/          # leak-free lag/rolling/calendar feature engineering
-│   ├── models/            # sarima.py, prophet_model.py, lightgbm_direct.py, lstm.py
-│   └── evaluation/        # shared train/test split, backtest harness, metrics, significance testing
-├── tests/                  # pytest suite mirroring src/, 79 tests
+│   ├── models/             # sarima.py, prophet_model.py, lightgbm_direct.py, lstm.py
+│   ├── evaluation/         # shared train/test split, backtest harness, metrics, significance testing
+│   └── pipeline/           # production: preprocessing orchestration, inference features,
+│                             # model serialization, MLflow registry, batch prediction, scheduling
+├── tests/                  # pytest suite mirroring src/, 102 tests
 ├── ROADMAP.md              # phase-by-phase plan, decisions, and findings (the project's real changelog)
 └── pyproject.toml
 ```
@@ -146,9 +151,11 @@ decision.
 - **Data**: DuckDB, Parquet, Pandera (schema validation)
 - **Modeling**: statsmodels/pmdarima (SARIMA), Prophet, LightGBM, PyTorch
   (LSTM)
-- **Tuning & tracking**: Optuna, MLflow
+- **Tuning & tracking**: Optuna, MLflow (experiment tracking + Model Registry)
 - **Evaluation**: scipy (Diebold-Mariano), custom rolling-origin backtest
   harness
+- **Production**: joblib (model serialization), a bounded-window inference
+  feature pipeline, MLflow pyfunc for a single deployable model interface
 - **Tooling**: uv (dependency management), pytest, Jupyter
 
 ## Getting started
@@ -163,23 +170,29 @@ uv run python -m src.data.load
 uv run python -m src.data.duckdb_setup
 uv run python -m src.features.build_features
 
-# Run the notebooks in order (01 through 10), or open them in Jupyter/VS Code
+# Run the notebooks in order (01 through 11), or open them in Jupyter/VS Code
+
+# Train and register the production model, then run a batch forecast
+uv run python -m src.pipeline.registry
+uv run python -m src.pipeline.predict
 
 # Run the test suite
 uv run pytest
 
-# View MLflow experiment tracking (SARIMA/Prophet/LightGBM/LSTM runs)
+# View MLflow experiment tracking + Model Registry (SARIMA/Prophet/LightGBM/LSTM runs,
+# plus the registered "energy-demand-lightgbm-direct" production model)
 uv run mlflow ui
 ```
 
 ## Testing
 
-79 tests covering the data pipeline, feature engineering, every model's
-core logic, the evaluation harness, and the statistical significance
-testing utilities — including regression tests for the data-leakage bug
-mentioned above. Run with `uv run pytest`; slow tests (fitting real
-Prophet/SARIMA/LightGBM models) are marked and can be excluded with
-`uv run pytest -m "not slow"`.
+102 tests covering the data pipeline, feature engineering, every model's
+core logic, the evaluation harness, the statistical significance testing
+utilities, and the production pipeline — including regression tests for the
+data-leakage bug mentioned above and for a categorical-feature-encoding edge
+case caught while building Phase 11. Run with `uv run pytest`; slow tests
+(fitting real Prophet/SARIMA/LightGBM models, or hitting the real DuckDB
+database) are marked and can be excluded with `uv run pytest -m "not slow"`.
 
 ## Data source
 
@@ -190,10 +203,12 @@ November 2010.
 
 ## Roadmap
 
-**Phases 1–10 are complete — this is a portfolio-complete checkpoint.**
-Data → EDA → anomalies → features → baselines → classical → ML/DL →
-rigorous evaluation → business impact, each with real, executed findings,
-not aspirational claims. Phases 11–16 (production pipeline, API,
-dashboard, MLOps, deployment) are the natural next milestone, treated as a
-second, separate goal rather than a blocker to sharing this work — see
+**Phases 1–10 are complete — a portfolio-complete checkpoint** (data → EDA →
+anomalies → features → baselines → classical → ML/DL → rigorous evaluation →
+business impact), **and Phase 11 (production pipeline) is complete too** —
+the Phase 10-recommended LightGBM model is now trained, serialized,
+registered in an MLflow Model Registry, and served through a batch
+prediction pipeline that reproduces the research backtest to within 0.9%
+MAE on the exact same held-out origins. Phases 12–16 (API, dashboard, MLOps,
+deployment, portfolio docs) are the remaining second-milestone work — see
 [`ROADMAP.md`](ROADMAP.md) for the full plan.

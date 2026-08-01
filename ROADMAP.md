@@ -5,7 +5,8 @@
 > `04_forecasting_baselines.ipynb`, `05_model_sarima.ipynb`,
 > `06_model_prophet_lightgbm.ipynb`, `07_model_lstm.ipynb`,
 > `08_model_comparison.ipynb`, `09_horizon_sensitivity.ipynb`,
-> `10_business_impact.ipynb` (done — Phases 1–10 complete).
+> `10_business_impact.ipynb` (done — Phases 1–10 complete),
+> `11_production_pipeline.ipynb` (done — Phase 11 complete).
 
 > **Portfolio-complete checkpoint reached:** Phases 1–10 form a complete,
 > story-worthy portfolio piece (data → EDA → anomalies → features → baselines →
@@ -426,14 +427,71 @@ operational cost.
 
 ---
 
-## Phase 11 — Production Pipeline
+## Phase 11 — Production Pipeline ✅
 
-- [ ] Build reusable preprocessing pipeline
-- [ ] Feature generation pipeline for inference
-- [ ] Model serialization
-- [ ] MLflow Model Registry
-- [ ] Batch prediction pipeline
-- [ ] Forecast scheduling simulation
+- [x] Build reusable preprocessing pipeline (`src/pipeline/preprocessing.py`
+      -- orchestrates the existing Phase 1-4 download/clean/DuckDB/feature
+      steps into one idempotent call)
+- [x] Feature generation pipeline for inference (`src/pipeline/inference_features.py`
+      -- builds one origin's feature row from a bounded ~192h window instead
+      of the full history)
+- [x] Model serialization (`src/pipeline/forecaster.py` -- `ModelBundle` +
+      joblib round-trip for the 24 direct-horizon LightGBM models)
+- [x] MLflow Model Registry (`src/pipeline/registry.py` -- trains and
+      registers a single pyfunc-wrapped model under the `champion` alias)
+- [x] Batch prediction pipeline (`src/pipeline/predict.py`)
+- [x] Forecast scheduling simulation (`src/pipeline/schedule_simulation.py`)
+
+**Findings (`11_production_pipeline.ipynb`):** **the production pipeline
+reproduces the Phase 7 research result closely, not approximately** -- MAE
+0.432 (production, via `simulate_daily_schedule` walking the real DuckDB ->
+inference-features -> serialized-model -> forecast path) vs. 0.429
+(notebook 06's in-memory backtest), a 0.9% relative gap, identical
+`n=6,156` and identical 29/288 skipped origins for the same NaN-feature
+reason. The gap is fully explained, not just close-enough: `registry.py`
+deliberately pins `random_state=42` where the Optuna-tuned notebook left
+LightGBM's row/column subsampling unseeded, so the two are honestly
+different (but equally valid) fits of the same hyperparameters, not a
+research/production logic mismatch -- both call the same `prepare_features`
+function underneath. **A real, previously-unenumerated bug was caught
+while building the validation itself**: picking a timestamp to test
+`build_latest_features` against the full-history `hourly_features` table
+required finding one genuinely free of NaN inputs, which surfaced a
+~51-hour gap (2009-06-13 04:00 to 2009-06-15 06:00) that Phase 1's findings
+never listed individually (only the 3 *longest* of 7 total long gaps were
+named) -- a small, honest reminder that "documented" and "exhaustively
+documented" aren't the same thing, four phases later. **A second real bug
+was caught and fixed mid-phase**: `DEFAULT_BUNDLE_PATH` and MLflow's
+tracking URI were both bare relative paths, so training from the notebook
+(cwd=`notebooks/`) silently created a second, disconnected model bundle and
+registry under `notebooks/` instead of reusing the repo-root one a script
+would use -- fixed by anchoring every pipeline path to the project root
+(`Path(__file__).resolve().parent.parent.parent`, matching
+`results_store.py`'s existing pattern) and pinning MLflow's tracking URI
+explicitly in `registry.py`. **A third, related bug turned up the same way:**
+`run_preprocessing_pipeline()` orchestrates the pre-existing Phase 1-4
+download/clean/DuckDB/feature modules, which all use paths relative to the
+project root under the same "always run from repo root" assumption --
+calling it from the notebook silently wrote a complete second copy of the
+entire dataset (raw zip through `hourly_features`) under `notebooks/data/`.
+Fixed with a `_in_project_root()` context manager that `os.chdir`s to the
+project root for the duration of the four orchestrated steps and always
+restores the caller's original directory afterward, even on error --
+scoped to `preprocessing.py` itself rather than retrofitting path-anchoring
+into four Phase 1-4 modules that have worked correctly under the
+CLI-from-repo-root convention for ten phases already. **Known, stated
+limitation carried forward:**
+`is_flagged_anomaly` is Phase 3's retrospective, hardcoded gap-investigation
+list -- always 0 for any date that didn't exist when Phase 3 ran, i.e. every
+real future production date. Phase 4 already found this feature wasn't a
+strong 1-hour-ahead predictor, so it doesn't undermine current numbers, but
+a genuinely live system would need an online anomaly detector for this
+feature to mean anything going forward. 23 new tests added under
+`tests/pipeline/`, including a `slow`-marked integration test that verifies
+the bounded-window feature reconstruction is bit-for-bit identical to the
+full-history table, and a categorical-dtype regression test confirming
+LightGBM correctly realigns category codes when an inference window sees
+fewer category values than training did.
 
 ---
 

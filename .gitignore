@@ -12,5 +12,7 @@ wheels/
 #others
 data/processed/
 data/raw/
+data/forecasts/
 .DS_Store
 mlruns/
+models/
