@@ -495,13 +495,46 @@ fewer category values than training did.
 
 ---
 
-## Phase 12 — API Development
+## Phase 12 — API Development ✅
 
-- [ ] FastAPI REST API
-- [ ] Pydantic request validation
-- [ ] Prediction endpoint
-- [ ] Health check endpoint
-- [ ] Dockerized API
+- [x] FastAPI REST API (`src/api/main.py`)
+- [x] Pydantic request validation (`src/api/schemas.py` -- `ForecastRequest`,
+      malformed `as_of` rejected with a 422 before the route body even runs)
+- [x] Prediction endpoint (`POST /forecast`)
+- [x] Health check endpoint (`GET /health`)
+- [x] Dockerized API (`Dockerfile`, built and run for real -- see findings)
+
+**Findings:** deliberately thin -- the API duplicates none of Phase 11's
+forecasting logic, it just translates HTTP into calls against
+`src/pipeline/inference_features.py` and `forecaster.py`. `get_bundle` /
+`get_forecaster` are FastAPI dependencies (not plain module state), so the
+9 tests in `tests/api/test_main.py` inject a tiny in-memory bundle via
+`app.dependency_overrides` instead of needing the real ~47MB production
+bundle on disk -- the test suite stays hermetic regardless of whether
+`registry.py` has ever been run in a given environment. **Verified live,
+not just via `TestClient`:** started the real app with `uvicorn`, then
+`curl`'d every path by hand -- `/health` returned the actual registered
+model's `trained_through` and the dataset's real latest timestamp;
+`POST /forecast` returned a live 24h forecast (peaking in the evening hours,
+same double-peak shape found back in Phase 7/9); a malformed `as_of` came
+back 422 before reaching any forecasting code; an `as_of` too early in the
+dataset for a full lookback window came back 400 with the exact NaN-column
+message `inference_features.py` raises, not a generic error. **Dockerized
+and actually run, not just written -- which caught a real bug on the
+first attempt:** `docker build` succeeded cleanly, but the container
+crashed immediately on startup with `OSError: libgomp.so.1: cannot open
+shared object file` -- `python:3.12-slim` doesn't ship the GNU OpenMP
+runtime LightGBM's compiled extension links against at import time. A
+successful build says nothing about whether the image actually runs; only
+starting the container and curling it caught this. Fixed with one line
+(`apt-get install libgomp1`); after the fix, `docker run -p 8000:8000`
+serves byte-identical `/health` and `/forecast` responses to the bare-metal
+`uvicorn` run, confirmed by curling both directly. Deliberate scope choice:
+the model bundle and `energy.duckdb` are baked
+into the image (self-contained `docker run`, no volume setup needed for
+this project's scope) rather than mounted or pulled from the MLflow
+registry at container startup -- the natural upgrade once Phase 15
+(Deployment) needs the served model to be updatable without a rebuild.
 
 ---
 

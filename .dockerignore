@@ -1,0 +1,14 @@
+.venv
+.git
+.pytest_cache
+__pycache__
+*.pyc
+notebooks/
+tests/
+mlruns/
+data/raw/
+data/processed/
+data/forecasts/
+data/results/
+assets/
+.DS_Store

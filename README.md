@@ -113,9 +113,11 @@ energy-demand-forecast/
 │   ├── features/          # leak-free lag/rolling/calendar feature engineering
 │   ├── models/             # sarima.py, prophet_model.py, lightgbm_direct.py, lstm.py
 │   ├── evaluation/         # shared train/test split, backtest harness, metrics, significance testing
-│   └── pipeline/           # production: preprocessing orchestration, inference features,
-│                             # model serialization, MLflow registry, batch prediction, scheduling
-├── tests/                  # pytest suite mirroring src/, 102 tests
+│   ├── pipeline/           # production: preprocessing orchestration, inference features,
+│   │                         # model serialization, MLflow registry, batch prediction, scheduling
+│   └── api/                # FastAPI app serving the production model (health + forecast endpoints)
+├── tests/                  # pytest suite mirroring src/, 111 tests
+├── Dockerfile              # containerizes the API (bakes in the trained model + DuckDB)
 ├── ROADMAP.md              # phase-by-phase plan, decisions, and findings (the project's real changelog)
 └── pyproject.toml
 ```
@@ -156,6 +158,7 @@ decision.
   harness
 - **Production**: joblib (model serialization), a bounded-window inference
   feature pipeline, MLflow pyfunc for a single deployable model interface
+- **API**: FastAPI, Pydantic, Docker
 - **Tooling**: uv (dependency management), pytest, Jupyter
 
 ## Getting started
@@ -182,17 +185,28 @@ uv run pytest
 # View MLflow experiment tracking + Model Registry (SARIMA/Prophet/LightGBM/LSTM runs,
 # plus the registered "energy-demand-lightgbm-direct" production model)
 uv run mlflow ui
+
+# Serve the model over HTTP (requires the registry step above to have run first)
+uv run uvicorn src.api.main:app --reload
+# GET  http://127.0.0.1:8000/health
+# POST http://127.0.0.1:8000/forecast   {"as_of": "2010-11-26T21:00:00"}  (or {} for the latest available)
+# Interactive docs at http://127.0.0.1:8000/docs
+
+# Or run it in Docker
+docker build -t energy-demand-forecast-api .
+docker run -p 8000:8000 energy-demand-forecast-api
 ```
 
 ## Testing
 
-102 tests covering the data pipeline, feature engineering, every model's
+111 tests covering the data pipeline, feature engineering, every model's
 core logic, the evaluation harness, the statistical significance testing
-utilities, and the production pipeline — including regression tests for the
-data-leakage bug mentioned above and for a categorical-feature-encoding edge
-case caught while building Phase 11. Run with `uv run pytest`; slow tests
-(fitting real Prophet/SARIMA/LightGBM models, or hitting the real DuckDB
-database) are marked and can be excluded with `uv run pytest -m "not slow"`.
+utilities, the production pipeline, and the API — including regression
+tests for the data-leakage bug mentioned above and for a
+categorical-feature-encoding edge case caught while building Phase 11. Run
+with `uv run pytest`; slow tests (fitting real Prophet/SARIMA/LightGBM
+models, or hitting the real DuckDB database) are marked and can be excluded
+with `uv run pytest -m "not slow"`.
 
 ## Data source
 
@@ -205,10 +219,12 @@ November 2010.
 
 **Phases 1–10 are complete — a portfolio-complete checkpoint** (data → EDA →
 anomalies → features → baselines → classical → ML/DL → rigorous evaluation →
-business impact), **and Phase 11 (production pipeline) is complete too** —
-the Phase 10-recommended LightGBM model is now trained, serialized,
-registered in an MLflow Model Registry, and served through a batch
-prediction pipeline that reproduces the research backtest to within 0.9%
-MAE on the exact same held-out origins. Phases 12–16 (API, dashboard, MLOps,
-deployment, portfolio docs) are the remaining second-milestone work — see
-[`ROADMAP.md`](ROADMAP.md) for the full plan.
+business impact). **Phase 11 (production pipeline) and Phase 12 (API) are
+complete too** — the Phase 10-recommended LightGBM model is trained,
+serialized, registered in an MLflow Model Registry, and now servable two
+ways: a batch/scheduling pipeline that reproduces the research backtest to
+within 0.9% MAE on the exact same held-out origins, and a FastAPI service
+(`/health`, `/forecast`) that's been run for real — both bare-metal via
+`uvicorn` and inside a built-and-run Docker container. Phases 13–16
+(dashboard, MLOps, deployment, portfolio docs) are the remaining
+second-milestone work — see [`ROADMAP.md`](ROADMAP.md) for the full plan.
