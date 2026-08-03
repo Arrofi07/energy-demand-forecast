@@ -15,4 +15,6 @@ data/raw/
 data/forecasts/
 .DS_Store
 mlruns/
-models/
+/models/
+.agents
+.claude

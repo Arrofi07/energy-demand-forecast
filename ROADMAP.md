@@ -584,15 +584,64 @@ chart/table matches the numbers already reported in earlier phases.
 
 ---
 
-## Phase 14 — Testing & MLOps
+## Phase 14 — Testing & MLOps ✅
 
-- [ ] Unit tests
-- [ ] Integration tests
-- [ ] Data validation tests
-- [ ] GitHub Actions CI/CD
-- [ ] Docker Compose
-- [ ] Model versioning with MLflow
-- [ ] Experiment reproducibility
+- [x] Unit tests -- filled the real gaps left after Phases 1-13's
+      test-as-you-go approach: `src/data/download.py`,
+      `src/data/duckdb_setup.py`, `src/models/sarima.py`,
+      `src/models/prophet_model.py`, and `src/pipeline/registry.py` had no
+      dedicated tests before this phase. 23 new tests, 142 total.
+- [x] Integration tests (`tests/integration/test_production_matches_research.py`
+      -- formalizes the manual Phase 11 notebook validation as a permanent,
+      automated regression test)
+- [x] Data validation tests (`tests/data/test_schema.py`, already in place
+      since Phase 1 -- audited, found adequate, no new validation layer added)
+- [x] GitHub Actions CI/CD (`.github/workflows/ci.yml`)
+- [x] Docker Compose (`docker-compose.yml` -- api + dashboard + mlflow ui,
+      one shared image, built and run for real)
+- [x] Model versioning with MLflow (already substantially built in Phase
+      11's `registry.py`; audited and confirmed working correctly here)
+- [x] Experiment reproducibility (audited and documented in README's new
+      "Reproducibility" section, including the one honest gap found)
+
+**Findings:** **the integration test formalizing Phase 11's manual
+validation passed** -- production MAE stayed within the expected <2%
+relative gap of the research MAE, with identical `n` (coverage), confirming
+the production pipeline still faithfully reproduces the research backtest
+now that it's an automated, permanent check rather than a one-time manual
+comparison. **Docker Compose was verified with all three services actually
+running together**, not just a written config: `docker compose up` starts
+`api` (8000), `dashboard` (8501), and `mlflow` (5001), and hitting the
+MLflow UI's REST API confirmed it sees the *real* project registry
+(`energy-demand-lightgbm-direct`, v3, `champion` alias) through the bind-mounted
+`./mlruns` volume, not a stale image-baked snapshot -- proving the
+volume-mount design (models/data/mlruns live-mounted, not `COPY`'d, unlike
+the standalone Phase 12 Dockerfile) actually achieves its stated goal.
+**A real, environment-specific bug was caught by actually running it**: the
+first `docker compose up` failed with a port conflict on 5000 -- macOS's
+AirPlay Receiver listens there by default. Fixed by remapping the host side
+to 5001 (`5001:5000`), a small but genuine friction point future Mac users
+of this repo would otherwise hit immediately. **The CI workflow is
+validated structurally** (YAML parses, job graph resolves, correct number
+of steps) but not yet run against real GitHub Actions infrastructure --
+that requires an actual push, which wasn't done as part of this phase.
+**Reproducibility audit found one honest, pre-existing gap, not introduced
+here**: the Optuna studies in `06_model_prophet_lightgbm.ipynb` and
+`07_model_lstm.ipynb` never seeded their sampler (`registry.py`'s
+production bundle does pin `random_state`, just not those research
+notebooks) -- already implicitly visible in Phase 8's own finding that
+widening the LSTM search from 12 to 30 trials changed the winning
+configuration, now stated explicitly in one place rather than left
+scattered across phase findings. **One more real bug, caught by the mundane
+act of checking `git status` after adding new test files**: Phase 12's
+`.gitignore` entry for the model bundle directory was `models/` with no
+leading slash, which gitignore matches against *any* directory named
+`models` anywhere in the tree -- silently swallowing the brand-new
+`tests/models/test_sarima.py` and `tests/models/test_prophet_model.py` in
+this phase (they never appeared in `git status` at all, not even as
+untracked). Fixed by anchoring it to `/models/` (repo-root only); verified
+both directions with `git check-ignore` -- the real model-bundle directory
+stays ignored, `tests/models/` no longer does.
 
 ---
 

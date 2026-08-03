@@ -117,8 +117,10 @@ energy-demand-forecast/
 │   │                         # model serialization, MLflow registry, batch prediction, scheduling
 │   ├── api/                # FastAPI app serving the production model (health + forecast endpoints)
 │   └── dashboard/          # Streamlit app: live forecast, model comparison, anomalies, business KPIs
-├── tests/                  # pytest suite mirroring src/, 111 tests
+├── tests/                  # pytest suite mirroring src/, 142 tests (+ tests/integration/)
+├── .github/workflows/      # CI: fast tests on every push, full suite (trains a model first) too
 ├── Dockerfile              # containerizes the API (bakes in the trained model + DuckDB)
+├── docker-compose.yml      # api + dashboard + mlflow ui, one shared image, live-mounted artifacts
 ├── ROADMAP.md              # phase-by-phase plan, decisions, and findings (the project's real changelog)
 └── pyproject.toml
 ```
@@ -264,16 +266,74 @@ Opens at `http://localhost:8501` with four pages in the sidebar:
 Every number shown is computed live from `data/results/` or the model
 bundle — nothing is hardcoded from this README.
 
+## Running Everything Together (Docker Compose)
+
+```bash
+docker compose up --build
+```
+
+Starts three services, sharing one image built from the same `Dockerfile`:
+
+| Service | URL | What it runs |
+|---|---|---|
+| `api` | http://localhost:8000 | FastAPI (`/health`, `/forecast`) |
+| `dashboard` | http://localhost:8501 | The Streamlit app above |
+| `mlflow` | http://localhost:5001 | MLflow experiment tracking + Model Registry UI |
+
+`models/`, `data/`, and `mlruns/` are bind-mounted (not baked into the
+image), so retraining on the host --
+`uv run python -m src.pipeline.registry` -- updates what all three services
+serve without an image rebuild. Stop everything with `docker compose down`.
+
 ## Testing
 
-119 tests covering the data pipeline, feature engineering, every model's
+142 tests covering the data pipeline, feature engineering, every model's
 core logic, the evaluation harness, the statistical significance testing
-utilities, the production pipeline, the API, and the dashboard —
-including regression tests for the data-leakage bug mentioned above and
-for a categorical-feature-encoding edge case caught while building Phase
-11. Run with `uv run pytest`; slow tests (fitting real Prophet/SARIMA/LightGBM
-models, or hitting the real DuckDB database) are marked and can be excluded
-with `uv run pytest -m "not slow"`.
+utilities, the production pipeline, the API, and the dashboard — including
+regression tests for the data-leakage bug mentioned above, for a
+categorical-feature-encoding edge case caught while building Phase 11, and
+an end-to-end integration test (`tests/integration/`) that trains the
+production model from scratch and checks it still reproduces the Phase 7
+research backtest. Run with `uv run pytest`; slow tests (fitting real
+Prophet/SARIMA/LightGBM models, or hitting the real DuckDB database) are
+marked and can be excluded with `uv run pytest -m "not slow"` -- which is
+exactly what CI's fast job does (see `.github/workflows/ci.yml`); a second
+CI job trains the production model first, then runs the complete suite.
+
+## Reproducibility
+
+- **Environment**: `uv.lock` pins every dependency exactly; `uv sync --frozen`
+  gives a byte-identical environment on any machine, which is what CI uses.
+- **Data**: `data/energy.duckdb` and every file under `data/results/` are
+  committed directly to git — cloning the repo gets the exact same processed
+  data and backtest results without re-downloading or re-processing anything.
+- **Production model**: fully reproducible. `src/pipeline/registry.py`
+  pins `random_state=42`, so `uv run python -m src.pipeline.registry`
+  produces the same model bundle every time, unlike the research notebook
+  it was tuned in (see next point).
+- **Research hyperparameter searches are the one honest gap**: the Optuna
+  studies in `06_model_prophet_lightgbm.ipynb` and `07_model_lstm.ipynb`
+  don't seed their sampler, so re-running those specific cells could select
+  different hyperparameters than the ones reported. This was already
+  surfaced directly in both notebooks' own findings (Phase 8 notes that
+  widening the LSTM search from 12 to 30 trials changed the winning
+  configuration) — the point estimates are this-run numbers, not
+  bit-for-bit guaranteed, but the qualitative conclusions (LightGBM/LSTM on
+  top, SARIMA collapsing at 7d, etc.) have held up across every re-run in
+  this project. LSTM's own weight init and data shuffling *are* seeded
+  (`set_seed(42)` in `src/models/lstm.py`) — only the hyperparameter search
+  itself isn't.
+- **Experiment tracking**: every SARIMA/Prophet/LightGBM/LSTM run is logged
+  to MLflow with its parameters and metrics; the production model is
+  versioned in the MLflow Model Registry (`energy-demand-lightgbm-direct`),
+  with every training run creating a new immutable version and the
+  `champion` alias always pointing at the latest.
+- **CI**: `.github/workflows/ci.yml` runs the fast test suite on every push,
+  plus a second job that trains the production bundle from scratch and runs
+  the full suite (including the integration test that checks the served
+  model still matches the research backtest) — a config or feature change
+  that silently breaks reproducibility gets caught automatically, not
+  noticed later.
 
 ## Data source
 
@@ -286,14 +346,13 @@ November 2010.
 
 **Phases 1–10 are complete — a portfolio-complete checkpoint** (data → EDA →
 anomalies → features → baselines → classical → ML/DL → rigorous evaluation →
-business impact). **Phases 11–13 (production pipeline, API, dashboard) are
-complete too** — the Phase 10-recommended LightGBM model is trained,
-serialized, registered in an MLflow Model Registry, and now servable three
-ways: a batch/scheduling pipeline that reproduces the research backtest to
-within 0.9% MAE on the exact same held-out origins, a FastAPI service
-(`/health`, `/forecast`) run for real both bare-metal and in a
-built-and-run Docker container, and a four-page Streamlit dashboard
-(live forecasts, model comparison, anomalies, business KPIs) verified with
-a real headless-browser session against the actual running app. Phases
-14–16 (MLOps, deployment, portfolio docs) are the remaining
-second-milestone work — see [`ROADMAP.md`](ROADMAP.md) for the full plan.
+business impact). **Phases 11–14 (production pipeline, API, dashboard,
+testing & MLOps) are complete too** — the Phase 10-recommended LightGBM
+model is trained, serialized, registered in an MLflow Model Registry, and
+servable three ways (batch/scheduling pipeline, FastAPI, Streamlit
+dashboard), all three run for real rather than just written, plus CI
+(`.github/workflows/ci.yml`), a `docker compose up`-able three-service
+stack, and an automated integration test that keeps the "production
+reproduces research" claim honest permanently instead of as a one-time
+manual check. Phases 15–16 (deployment, portfolio docs) are the remaining
+work — see [`ROADMAP.md`](ROADMAP.md) for the full plan.
