@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  fast-tests:
+    name: Fast tests (no real model/training required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run fast test suite
+        run: uv run pytest -m "not slow"
+
+  full-tests:
+    name: Full test suite (trains the production model first)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Train and register the production model bundle
+        # data/energy.duckdb and data/results/*.parquet are committed, so
+        # this needs no network access or raw-data download -- only the
+        # slow tests that load models/lightgbm_direct_bundle.joblib
+        # (dashboard, some pipeline/API paths) need this step first.
+        run: uv run python -m src.pipeline.registry
+
+      - name: Run full test suite (including slow/integration tests)
+        run: uv run pytest
