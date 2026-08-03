@@ -1,0 +1,34 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Live-mounted rather than the image's build-time COPY -- lets
+      # `uv run python -m src.pipeline.registry` (run on the host, or via
+      # `docker compose run api uv run python -m src.pipeline.registry`)
+      # update the served model/data without rebuilding the image.
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./mlruns:/app/mlruns
+    command: uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+
+  dashboard:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./mlruns:/app/mlruns
+    command: uv run streamlit run src/dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+
+  mlflow:
+    build: .
+    ports:
+      # Host port 5001, not 5000 -- macOS's AirPlay Receiver listens on 5000
+      # by default and the conflict was caught by actually running this.
+      - "5001:5000"
+    volumes:
+      - ./mlruns:/app/mlruns
+    command: uv run mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri file:/app/mlruns
