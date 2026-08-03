@@ -538,15 +538,49 @@ registry at container startup -- the natural upgrade once Phase 15
 
 ---
 
-## Phase 13 — Dashboard
+## Phase 13 — Dashboard ✅
 
-- [ ] Streamlit dashboard
-- [ ] Interactive forecast visualization
-- [ ] Actual vs prediction comparison
-- [ ] Confidence interval visualization
-- [ ] Anomaly visualization
-- [ ] Model comparison dashboard
-- [ ] Business KPI dashboard
+- [x] Streamlit dashboard (`src/dashboard/app.py` + 4 pages, multipage app)
+- [x] Interactive forecast visualization (`pages/1_Live_Forecast.py`)
+- [x] Actual vs prediction comparison (same page -- overlays known actuals
+      where the forecast window falls inside the historical data)
+- [x] Confidence interval visualization (empirical 10th-90th percentile
+      band from the real Phase 7 backtest residuals, shaded around the
+      live forecast -- labeled clearly as empirical, not model-native,
+      since this LightGBM setup produces point forecasts only)
+- [x] Anomaly visualization (`pages/3_Anomaly_Detection.py` -- reuses Phase
+      3's already-flagged 27 dates from `build_features.py` rather than
+      re-running detection live)
+- [x] Model comparison dashboard (`pages/2_Model_Comparison.py` -- 24h
+      leaderboard + error-vs-horizon chart, plus a toggle for the Phase 9B
+      1h/24h/7d horizon-sensitivity comparison)
+- [x] Business KPI dashboard (`pages/4_Business_Impact.py` -- an
+      interactive version of Phase 10's illustrative savings estimate,
+      with portfolio size and imbalance premium as live sliders instead of
+      a fixed notebook cell)
+
+**Findings:** every number on every page is computed live from
+`data/results/` or the production model bundle via
+`src/dashboard/data_access.py` (cached with `st.cache_data`/
+`st.cache_resource`) -- nothing is hardcoded from the README, so the
+dashboard can't silently drift from the actual saved artifacts. Confirmed
+directly: at the default assumptions (10,000 households, $20/MWh), the
+Business Impact page's live-computed estimate landed on **$178,394/year**,
+matching the README's Phase 10 figure exactly. **A real bug was caught by
+actually launching the app, not by trusting the 8 passing `AppTest`-based
+unit tests** (`tests/dashboard/test_pages.py`): `streamlit run
+src/dashboard/app.py` executes the file directly rather than via `python
+-m`, so Python only puts `src/dashboard/` on `sys.path`, not the project
+root -- every `from src...` import failed with `ModuleNotFoundError` the
+moment a real browser hit the real server, even though `AppTest` (which
+runs under pytest, where the project root is already importable) never
+caught it. Fixed with an explicit `sys.path` bootstrap at the top of
+`app.py` and every page file, anchored to `Path(__file__).resolve()` rather
+than assuming a launch-time cwd. Verified end-to-end with a real headless
+Chromium session (Playwright) driving the actual running server: navigated
+every page, clicked "Generate forecast," toggled both Model Comparison
+views, and captured screenshots -- zero console/page errors, and every
+chart/table matches the numbers already reported in earlier phases.
 
 ---
 
